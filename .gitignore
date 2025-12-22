@@ -31,5 +31,5 @@ Thumbs.db
 *.sqlite
 
 # Reports (if you don't want to commit generated reports)
-# final_reports/
+final_reports/
 
