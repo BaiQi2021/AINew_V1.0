@@ -1,0 +1,15 @@
+sqlalchemy
+asyncmy
+asyncpg
+aiosqlite
+httpx[http2]
+beautifulsoup4
+openai
+loguru
+pydantic
+pydantic-settings
+greenlet
+tabulate
+cloudscraper
+streamlit
+pandas
