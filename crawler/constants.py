@@ -64,7 +64,7 @@ CRAWLER_CONFIGS: List[Dict] = [
     {
         'key': 'meta',
         'name': 'Meta AI',
-        'module': 'crawler.meta_microsoft_scraper',
+        'module': 'crawler.meta_scraper',
         'class': 'MetaAIScraper',
         'runner': 'run_meta_microsoft_crawler',
         'type': 'company',

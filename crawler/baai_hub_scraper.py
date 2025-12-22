@@ -277,7 +277,7 @@ class BaaiHubScraper(BaseWebScraper):
                 'content': content,
                 'publish_date': publish_date,
                 'source_keyword': 'baai_hub',
-                'reference_links': reference_links
+                'reference_links': json.dumps(reference_links, ensure_ascii=False) if reference_links else ''
             }
             
         except Exception as e:
@@ -416,7 +416,7 @@ class BaaiHubScraper(BaseWebScraper):
                 'content': content,
                 'publish_date': publish_date,
                 'source_keyword': 'baai_hub',
-                'reference_links': reference_links
+                'reference_links': json.dumps(reference_links, ensure_ascii=False) if reference_links else ''
             }
         except Exception as e:
             logger.error(f"Error parsing WeChat detail: {e}")
@@ -512,7 +512,7 @@ class BaaiHubScraper(BaseWebScraper):
             'content': content,
             'publish_date': publish_date,
             'source_keyword': 'baai_hub', # Might be None if not found
-            'reference_links': reference_links
+            'reference_links': json.dumps(reference_links, ensure_ascii=False) if reference_links else ''
         }
 
     def _fix_encoding(self, text: str) -> str:

@@ -18,7 +18,7 @@ logger = utils.setup_logger()
 
 async def main():
     parser = argparse.ArgumentParser(description="AIReport Crawler & Generator")
-    parser.add_argument("--days", type=int, default=7, help="Number of days to look back for data")
+    parser.add_argument("--days", type=int, default=1, help="Number of days to look back for data")
     parser.add_argument("--skip-crawl", action="store_true", help="Skip crawling, only generate report")
     parser.add_argument("--skip-report", action="store_true", help="Skip report generation, only crawl")
     parser.add_argument("--crawler", type=str, default="all", 
