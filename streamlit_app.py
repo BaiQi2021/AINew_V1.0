@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 import os
 import sys
+import time
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -257,7 +258,7 @@ async def generate_report_step_by_step(days, report_count, custom_instructions="
 st.sidebar.title("⚙️ 控制面板")
 
 st.sidebar.subheader("1. 数据采集设置")
-days_lookback = st.sidebar.slider("回溯天数 (Days)", 1, 30, 3)
+days_lookback = st.sidebar.slider("回溯天数 (Days)", 1, 30, 1)
 
 # Specific list of crawlers as requested
 target_crawlers = {
@@ -285,7 +286,7 @@ if st.sidebar.button("🚀 开始采集 (Start Crawling)"):
         st.sidebar.error("请至少选择一个爬虫！")
     else:
         with st.spinner(f"正在运行爬虫..."):
-            asyncio.run(run_crawler_task(selected_crawler_keys, days_lookback, 3))
+            asyncio.run(run_crawler_task(selected_crawler_keys, days_lookback, 1))
         st.sidebar.success("采集完成！")
 
 st.sidebar.markdown("---")
@@ -323,9 +324,28 @@ if st.sidebar.button("✨ 生成报告 (Generate Report)"):
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("3. 定时任务设置")
-with st.sidebar.expander("配置定时运行", expanded=False):
-    schedule_time = st.text_input("每天运行时间 (HH:MM)", value="09:00", help="例如: 09:00")
-    feishu_webhook = st.text_input("飞书 Webhook URL", type="password", help="用于接收报告推送")
+
+# Get current status
+status = scheduler_manager.get_status()
+
+# Status Display
+if status["webhook_configured"]:
+    st.sidebar.success(f"✅ 定时任务已启用 (每天 {status['schedule_time']})")
+    if status["next_run_time"]:
+        next_run = status["next_run_time"].strftime("%Y-%m-%d %H:%M:%S")
+        st.sidebar.caption(f"⏭️ 下次运行: {next_run}")
+else:
+    st.sidebar.info("ℹ️ 定时任务未配置")
+
+if status["is_running"]:
+    st.sidebar.warning("⚠️ 后台任务正在运行中...")
+    st.sidebar.progress(50, text=status.get("current_status", "正在执行..."))
+    time.sleep(2)
+    st.rerun()
+
+with st.sidebar.expander("修改配置", expanded=not status["webhook_configured"]):
+    schedule_time = st.text_input("每天运行时间 (HH:MM)", value=status['schedule_time'] if status['schedule_time'] else "09:00", help="例如: 09:00")
+    feishu_webhook = st.text_input("飞书 Webhook URL", value=scheduler_manager.feishu_webhook if scheduler_manager.feishu_webhook else "", type="password", help="用于接收报告推送")
     
     if st.button("保存定时设置"):
         if not feishu_webhook:
@@ -333,6 +353,7 @@ with st.sidebar.expander("配置定时运行", expanded=False):
         else:
             scheduler_manager.update_schedule(schedule_time, feishu_webhook, days_lookback)
             st.success(f"已设置定时任务: 每天 {schedule_time}")
+            st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.info("Designed for AIReport Project")
@@ -379,11 +400,12 @@ else:
     st.subheader("📊 最近采集的数据预览")
     
     async def get_recent_articles():
+        today_str = datetime.now().strftime('%Y-%m-%d')
         async with get_session() as session:
             # Fetch a few from each table
-            q_stmt = select(QbitaiArticle.title, QbitaiArticle.publish_date, QbitaiArticle.article_url).order_by(desc(QbitaiArticle.publish_time)).limit(5)
-            c_stmt = select(CompanyArticle.title, CompanyArticle.publish_date, CompanyArticle.article_url).order_by(desc(CompanyArticle.publish_time)).limit(5)
-            b_stmt = select(BaaiHubArticle.title, BaaiHubArticle.publish_date, BaaiHubArticle.article_url).order_by(desc(BaaiHubArticle.publish_time)).limit(5)
+            q_stmt = select(QbitaiArticle.title, QbitaiArticle.publish_date, QbitaiArticle.article_url).where(QbitaiArticle.publish_date == today_str).order_by(desc(QbitaiArticle.publish_time))
+            c_stmt = select(CompanyArticle.title, CompanyArticle.publish_date, CompanyArticle.article_url).where(CompanyArticle.publish_date == today_str).order_by(desc(CompanyArticle.publish_time))
+            b_stmt = select(BaaiHubArticle.title, BaaiHubArticle.publish_date, BaaiHubArticle.article_url).where(BaaiHubArticle.publish_date == today_str).order_by(desc(BaaiHubArticle.publish_time))
             
             q_res = await session.execute(q_stmt)
             c_res = await session.execute(c_stmt)
@@ -410,6 +432,6 @@ else:
                 width="stretch"
             )
         else:
-            st.write("暂无数据，请先进行采集。")
+            st.write(f"暂无今日 ({datetime.now().strftime('%Y-%m-%d')}) 数据，请先进行采集。")
     except Exception as e:
         st.error(f"加载预览数据失败: {e}")
