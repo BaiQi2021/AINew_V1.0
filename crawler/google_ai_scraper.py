@@ -367,6 +367,7 @@ async def run_google_ai_crawler(days: int = 7):
         blog_articles = await deepmind_scraper.get_article_list(article_type='blog')
         
         count = 0
+        consecutive_old_articles = 0  # 跟踪连续过期文章数
         for article_item in blog_articles[:15]:
             try:
                 article = await deepmind_scraper.get_article_detail(
@@ -384,8 +385,15 @@ async def run_google_ai_crawler(days: int = 7):
                              continue
                         if now_ts - article_ts > days * 86400:
                              logger.info(f"Skip article {article['title']}: too old ({article['publish_date']})")
+                             consecutive_old_articles += 1
+                             # 如果连续遇到5篇过期文章，停止爬取
+                             if consecutive_old_articles >= 5:
+                                 logger.info(f"Found {consecutive_old_articles} consecutive old articles. Stopping.")
+                                 break
                              continue
                     
+                    # 重置计数器
+                    consecutive_old_articles = 0
                     await save_company_article_to_db(article)
                     count += 1
                 
@@ -401,6 +409,7 @@ async def run_google_ai_crawler(days: int = 7):
         research_articles = await deepmind_scraper.get_article_list(article_type='research')
         
         count = 0
+        consecutive_old_articles = 0  # 跟踪连续过期文章数
         for article_item in research_articles[:15]:
             try:
                 article = await deepmind_scraper.get_article_detail(
@@ -418,8 +427,15 @@ async def run_google_ai_crawler(days: int = 7):
                              continue
                         if now_ts - article_ts > days * 86400:
                              logger.info(f"Skip article {article['title']}: too old ({article['publish_date']})")
+                             consecutive_old_articles += 1
+                             # 如果连续遇到5篇过期文章，停止爬取
+                             if consecutive_old_articles >= 5:
+                                 logger.info(f"Found {consecutive_old_articles} consecutive old articles. Stopping.")
+                                 break
                              continue
                     
+                    # 重置计数器
+                    consecutive_old_articles = 0
                     await save_company_article_to_db(article)
                     count += 1
                 

@@ -339,9 +339,7 @@ else:
 
 if status["is_running"]:
     st.sidebar.warning("⚠️ 后台任务正在运行中...")
-    st.sidebar.progress(50, text=status.get("current_status", "正在执行..."))
-    time.sleep(2)
-    st.rerun()
+    st.sidebar.caption(f"当前状态: {status.get('current_status', '正在执行...')}")
 
 with st.sidebar.expander("修改配置", expanded=not status["webhook_configured"]):
     schedule_time = st.text_input("每天运行时间 (HH:MM)", value=status['schedule_time'] if status['schedule_time'] else "09:00", help="例如: 09:00")
@@ -373,6 +371,40 @@ except Exception as e:
     st.error(f"无法连接数据库: {e}")
 
 st.markdown("---")
+
+# Background Task Progress
+status = scheduler_manager.get_status()
+pipeline_steps = status.get("pipeline_steps", [])
+if status["is_running"] or (pipeline_steps and status["current_status"] != "Idle"):
+    st.subheader("⏳ 定时任务运行状态 (Scheduled Task Progress)")
+    
+    # Determine status label and state
+    status_label = f"正在执行定时任务: {status['current_status']}"
+    status_state = "running" if status["is_running"] else "complete"
+    if "Error" in status["current_status"]:
+        status_state = "error"
+        
+    status_container = st.status(status_label, expanded=status["is_running"], state=status_state)
+    with status_container:
+        for step in pipeline_steps:
+            if step["type"] == "text":
+                st.write(f"[{step['timestamp']}] {step['content']}")
+            elif step["type"] == "info":
+                st.info(f"[{step['timestamp']}] {step['content']}")
+            elif step["type"] == "success":
+                st.success(f"[{step['timestamp']}] {step['content']}")
+            elif step["type"] == "error":
+                st.error(f"[{step['timestamp']}] {step['content']}")
+            elif step["type"] == "chart":
+                st.write(f"📊 {step['label']}")
+                st.bar_chart(step["content"])
+            elif step["type"] == "dataframe":
+                st.write(f"📋 {step['label']}")
+                st.dataframe(pd.DataFrame(step["content"]))
+    
+    if status["is_running"]:
+        time.sleep(2)
+        st.rerun()
 
 # Report Display
 if st.session_state.report_content:

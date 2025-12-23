@@ -248,6 +248,7 @@ async def run_anthropic_crawler(days: int = 7):
         logger.info("Fetching Anthropic news articles...")
         news_articles = await scraper.get_article_list(article_type='news')
         
+        consecutive_old_articles = 0  # 跟踪连续过期文章数
         for article_item in news_articles[:20]:
             try:
                 article = await scraper.get_article_detail(
@@ -265,8 +266,15 @@ async def run_anthropic_crawler(days: int = 7):
                              continue
                         if now_ts - article_ts > days * 86400:
                              logger.info(f"Skip article {article['title']}: too old ({article['publish_date']})")
+                             consecutive_old_articles += 1
+                             # 如果连续遇到5篇过期文章，停止爬取
+                             if consecutive_old_articles >= 5:
+                                 logger.info(f"Found {consecutive_old_articles} consecutive old articles. Stopping.")
+                                 break
                              continue
 
+                    # 重置计数器
+                    consecutive_old_articles = 0
                     await save_company_article_to_db(article)
                 
                 await asyncio.sleep(2)
@@ -279,6 +287,7 @@ async def run_anthropic_crawler(days: int = 7):
         logger.info("Fetching Anthropic research articles...")
         research_articles = await scraper.get_article_list(article_type='research')
         
+        consecutive_old_articles = 0  # 跟踪连续过期文章数
         for article_item in research_articles[:20]:
             try:
                 article = await scraper.get_article_detail(
@@ -296,8 +305,15 @@ async def run_anthropic_crawler(days: int = 7):
                              continue
                         if now_ts - article_ts > days * 86400:
                              logger.info(f"Skip article {article['title']}: too old ({article['publish_date']})")
+                             consecutive_old_articles += 1
+                             # 如果连续遇到5篇过期文章，停止爬取
+                             if consecutive_old_articles >= 5:
+                                 logger.info(f"Found {consecutive_old_articles} consecutive old articles. Stopping.")
+                                 break
                              continue
 
+                    # 重置计数器
+                    consecutive_old_articles = 0
                     await save_company_article_to_db(article)
                 
                 await asyncio.sleep(2)

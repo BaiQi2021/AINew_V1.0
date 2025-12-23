@@ -275,6 +275,8 @@ async def run_crawler(days=3):
         # AIbase daily page might contain multiple days of news
         articles = await scraper.get_article_list(page=1)
         
+        consecutive_old_articles = 0  # 跟踪连续过期文章数
+        
         for article_item in articles:
             try:
                 # Check if we already processed this URL? 
@@ -293,7 +295,15 @@ async def run_crawler(days=3):
                 # Date check
                 if article.get('publish_date', '') < str(start_date.date()):
                     logger.info(f"Article {article['article_id']} too old ({article.get('publish_date')})")
+                    consecutive_old_articles += 1
+                    # 如果连续遇到5篇过期文章，停止爬取
+                    if consecutive_old_articles >= 5:
+                        logger.info(f"Found {consecutive_old_articles} consecutive old articles. Stopping.")
+                        break
                     continue
+                else:
+                    # 重置计数器
+                    consecutive_old_articles = 0
                     
                 await save_article_to_db(article)
                 await asyncio.sleep(2)  # Polite delay
