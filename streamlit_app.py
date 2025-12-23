@@ -274,10 +274,11 @@ target_crawlers = {
 selected_crawlers_labels = st.sidebar.multiselect(
     "选择爬虫 (Select Crawlers)",
     options=list(target_crawlers.keys()),
-    default=list(target_crawlers.keys())
+    default=list(target_crawlers.keys()),
+    key="crawler_multiselect"
 )
 
-selected_crawler_keys = [target_crawlers[label] for label in selected_crawlers_labels]
+selected_crawler_keys = [target_crawlers[label] for label in selected_crawlers_labels if label in target_crawlers]
 
 if st.sidebar.button("🚀 开始采集 (Start Crawling)"):
     if not selected_crawler_keys:
