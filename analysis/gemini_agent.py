@@ -1361,7 +1361,7 @@ all:"Large Language Model" AND all:Reasoning
    ```markdown
    ### **[事件标题 - 基于主标题优化（尽量不超过8个字）]**
    
-   [阅读原文]([primary_url])  `[Publish_Time]`
+   [阅读原文]([primary_url])  [Publish_Time]
    
    > **概要**: [综合多个来源，用3-4句话简练概括核心事件]
    
@@ -1535,7 +1535,7 @@ all:"Large Language Model" AND all:Reasoning
    ```markdown
    ### **[新闻标题]**
    
-   [阅读原文]([URL])  `[Publish_Time]`
+   [阅读原文]([URL])  [Publish_Time]
    
    > **概要**: [3-4句话简练概括核心事件]
    
