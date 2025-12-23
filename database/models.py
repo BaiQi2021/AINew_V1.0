@@ -101,3 +101,13 @@ class BaaiHubArticle(Base):
     add_ts = Column(BigInteger)
     last_modify_ts = Column(BigInteger)
 
+
+class ReportedArticle(Base):
+    """已生成报告的文章记录表"""
+    __tablename__ = 'reported_article'
+    id = Column(Integer, primary_key=True)
+    article_id = Column(String(255), nullable=False, index=True) # 组合ID
+    original_id = Column(String(255), nullable=False)
+    source_table = Column(String(50), nullable=False)
+    report_generated_at = Column(BigInteger, index=True)
+    report_file_path = Column(String(512))

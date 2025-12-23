@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from contextlib import asynccontextmanager
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 from .models import Base
 import config
+import logging
 
 settings = config.settings
 
@@ -51,6 +52,15 @@ async def init_db():
     engine = create_async_engine(get_db_url(), echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Check and log existing tables
+        def _get_tables(connection):
+            inspector = inspect(connection)
+            return inspector.get_table_names()
+            
+        tables = await conn.run_sync(_get_tables)
+        logging.info(f"Database initialized. Verified tables: {tables}")
+        
     await engine.dispose()
 
 @asynccontextmanager

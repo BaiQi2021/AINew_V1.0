@@ -70,6 +70,135 @@ COMMENT ON COLUMN qbitai_article.last_modify_ts IS '记录最后修改时间戳'
 -- 为常用查询优化添加复合索引
 CREATE INDEX idx_article_date_category ON qbitai_article(publish_date, category);
 
+-- ----------------------------
+-- Table structure for company_article
+-- AI公司官网文章表
+-- ----------------------------
+DROP TABLE IF EXISTS company_article CASCADE;
+
+CREATE TABLE company_article (
+    id SERIAL PRIMARY KEY,
+    article_id VARCHAR(255) NOT NULL,
+    company VARCHAR(100) NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    content TEXT,
+    article_url TEXT NOT NULL,
+    author VARCHAR(255),
+    publish_time BIGINT,
+    publish_date VARCHAR(10),
+    category VARCHAR(100),
+    tags TEXT,
+    cover_image VARCHAR(512),
+    article_type VARCHAR(50),
+    is_research INTEGER DEFAULT 0,
+    is_product INTEGER DEFAULT 0,
+    reference_links TEXT,
+    add_ts BIGINT,
+    last_modify_ts BIGINT
+);
+
+CREATE UNIQUE INDEX idx_company_article_unique ON company_article(article_id);
+CREATE INDEX idx_company_article_company ON company_article(company);
+CREATE INDEX idx_company_article_time ON company_article(publish_time);
+CREATE INDEX idx_company_article_date ON company_article(publish_date);
+
+COMMENT ON TABLE company_article IS 'AI公司官网文章表';
+
+-- ----------------------------
+-- Table structure for aibase_article
+-- AIbase文章表
+-- ----------------------------
+DROP TABLE IF EXISTS aibase_article CASCADE;
+
+CREATE TABLE aibase_article (
+    id SERIAL PRIMARY KEY,
+    article_id VARCHAR(255) NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    content TEXT,
+    article_url TEXT NOT NULL,
+    author VARCHAR(255),
+    publish_time BIGINT,
+    publish_date VARCHAR(10),
+    read_count INTEGER DEFAULT 0,
+    like_count INTEGER DEFAULT 0,
+    comment_count INTEGER DEFAULT 0,
+    share_count INTEGER DEFAULT 0,
+    collect_count INTEGER DEFAULT 0,
+    category VARCHAR(100),
+    tags TEXT,
+    cover_image VARCHAR(512),
+    source_keyword VARCHAR(255) DEFAULT '',
+    is_original INTEGER DEFAULT 1,
+    reference_links TEXT,
+    add_ts BIGINT,
+    last_modify_ts BIGINT
+);
+
+CREATE UNIQUE INDEX idx_aibase_article_unique ON aibase_article(article_id);
+CREATE INDEX idx_aibase_article_time ON aibase_article(publish_time);
+CREATE INDEX idx_aibase_article_date ON aibase_article(publish_date);
+
+COMMENT ON TABLE aibase_article IS 'AIbase文章表';
+
+-- ----------------------------
+-- Table structure for baai_hub_article
+-- 智源社区文章表
+-- ----------------------------
+DROP TABLE IF EXISTS baai_hub_article CASCADE;
+
+CREATE TABLE baai_hub_article (
+    id SERIAL PRIMARY KEY,
+    article_id VARCHAR(255) NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    content TEXT,
+    article_url TEXT NOT NULL,
+    author VARCHAR(255),
+    publish_time BIGINT,
+    publish_date VARCHAR(10),
+    read_count INTEGER DEFAULT 0,
+    like_count INTEGER DEFAULT 0,
+    comment_count INTEGER DEFAULT 0,
+    share_count INTEGER DEFAULT 0,
+    collect_count INTEGER DEFAULT 0,
+    category VARCHAR(100),
+    tags TEXT,
+    cover_image VARCHAR(512),
+    source_keyword VARCHAR(255) DEFAULT '',
+    is_original INTEGER DEFAULT 1,
+    reference_links TEXT,
+    add_ts BIGINT,
+    last_modify_ts BIGINT
+);
+
+CREATE UNIQUE INDEX idx_baai_hub_article_unique ON baai_hub_article(article_id);
+CREATE INDEX idx_baai_hub_article_time ON baai_hub_article(publish_time);
+CREATE INDEX idx_baai_hub_article_date ON baai_hub_article(publish_date);
+
+COMMENT ON TABLE baai_hub_article IS '智源社区文章表';
+
+-- ----------------------------
+-- Table structure for reported_article
+-- 已生成报告的文章记录表
+-- ----------------------------
+DROP TABLE IF EXISTS reported_article CASCADE;
+
+CREATE TABLE reported_article (
+    id SERIAL PRIMARY KEY,
+    article_id VARCHAR(255) NOT NULL,
+    original_id VARCHAR(255) NOT NULL,
+    source_table VARCHAR(50) NOT NULL,
+    report_generated_at BIGINT,
+    report_file_path VARCHAR(512)
+);
+
+CREATE INDEX idx_reported_article_id ON reported_article(article_id);
+CREATE INDEX idx_reported_article_time ON reported_article(report_generated_at);
+
+COMMENT ON TABLE reported_article IS '已生成报告的文章记录表';
+
 -- ===============================
 -- 数据库配置说明
 -- ===============================

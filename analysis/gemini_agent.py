@@ -19,7 +19,7 @@ from openai import OpenAI
 import httpx
 from sqlalchemy import select, desc, or_, delete
 
-from database.models import QbitaiArticle, CompanyArticle, AibaseArticle, BaaiHubArticle
+from database.models import QbitaiArticle, CompanyArticle, AibaseArticle, BaaiHubArticle, ReportedArticle
 from database.db_session import get_session
 import config
 from crawler import utils
@@ -230,6 +230,20 @@ class GeminiAIReportAgent:
                     source_table="baai_hub_article"
                 ))
         
+        # 过滤已报道的文章
+        if news_items:
+            async with get_session() as session:
+                reported_ids_stmt = select(ReportedArticle.article_id)
+                result = await session.execute(reported_ids_stmt)
+                reported_ids = set(result.scalars().all())
+                
+                if reported_ids:
+                    original_count = len(news_items)
+                    news_items = [item for item in news_items if item.article_id not in reported_ids]
+                    filtered_count = original_count - len(news_items)
+                    if filtered_count > 0:
+                        logger.info(f"已过滤 {filtered_count} 条已报道过的文章")
+
         logger.info(f"共获取 {len(news_items)} 条新闻数据")
         return news_items
     
@@ -2086,6 +2100,50 @@ all:"Large Language Model" AND all:Reasoning
         
         return True
     
+    def save_report_to_file(self, report_content: str) -> str:
+        """保存报告到文件"""
+        output_dir = Path("final_reports")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / f"AI_Report_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.md"
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+        
+        logger.info(f"报告已保存至: {output_file}")
+        return str(output_file)
+
+    async def mark_articles_as_reported(self, news_items: List[NewsItem], file_path: str):
+        """将已报道的文章记录到数据库，避免重复报道"""
+        if not news_items:
+            return
+            
+        logger.info(f"正在记录 {len(news_items)} 条已报道文章...")
+        current_ts = int(datetime.now().timestamp())
+        
+        async with get_session() as session:
+            try:
+                for item in news_items:
+                    # 检查是否已存在
+                    stmt = select(ReportedArticle).where(ReportedArticle.article_id == item.article_id)
+                    result = await session.execute(stmt)
+                    if result.scalar():
+                        continue
+                        
+                    reported = ReportedArticle(
+                        article_id=item.article_id,
+                        original_id=str(item.original_id),
+                        source_table=item.source_table,
+                        report_generated_at=current_ts,
+                        report_file_path=str(file_path)
+                    )
+                    session.add(reported)
+                
+                await session.commit()
+                logger.info("已报道文章记录完成")
+            except Exception as e:
+                logger.error(f"记录已报道文章失败: {e}")
+                await session.rollback()
+
     async def run(self, days: int = 3, save_intermediate: bool = True, report_count: int = 10) -> Optional[str]:
         """
         运行完整的处理流程
@@ -2146,17 +2204,14 @@ all:"Large Language Model" AND all:Reasoning
         
         if report_content:
             # 保存最终报告
-            output_dir = Path("final_reports")
-            output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"AI_Report_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.md"
+            file_path = self.save_report_to_file(report_content)
             
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(report_content)
+            # 记录已报道文章
+            await self.mark_articles_as_reported(news_items, file_path)
             
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info("=" * 60)
             logger.info(f"报告生成成功！耗时: {elapsed:.2f}秒")
-            logger.info(f"报告保存至: {output_file}")
             logger.info("=" * 60)
             
             return report_content

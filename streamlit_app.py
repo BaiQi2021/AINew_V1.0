@@ -165,7 +165,7 @@ def update_data_preview(container, items, stage):
         st.dataframe(
             df,
             column_config=column_config,
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
 
@@ -234,6 +234,12 @@ async def generate_report_step_by_step(days, report_count, custom_instructions="
         st.write("✍️ 正在撰写最终报告...")
         report = await agent.generate_final_report(ranked_items, arxiv_papers=arxiv_papers, days=days, target_count=report_count, custom_instructions=custom_instructions)
         
+        if report:
+            st.write("💾 正在保存报告并更新数据库...")
+            file_path = agent.save_report_to_file(report)
+            await agent.mark_articles_as_reported(ranked_items, file_path)
+            st.success(f"报告已保存至: {file_path}")
+        
         status_container.update(label="报告生成完成！", state="complete", expanded=False)
         return report
 
@@ -289,7 +295,8 @@ report_count = st.sidebar.number_input(
     min_value=1, 
     max_value=max_report_count, 
     value=min(10, max_report_count),
-    help=f"基于当前数据量，建议不超过 {available_count} 条"
+    help=f"基于当前数据量，建议不超过 {available_count} 条",
+    key="report_count_input"
 )
 
 template_file = st.sidebar.file_uploader("上传报告模版/指令 (可选)", type=["md", "txt"])
@@ -375,7 +382,7 @@ else:
                 column_config={
                     "URL": st.column_config.LinkColumn("Link")
                 },
-                use_container_width=True
+                width="stretch"
             )
         else:
             st.write("暂无数据，请先进行采集。")
