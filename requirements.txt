@@ -13,3 +13,4 @@ tabulate
 cloudscraper
 streamlit
 pandas
+apscheduler

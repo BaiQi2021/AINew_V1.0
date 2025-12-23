@@ -15,6 +15,7 @@ from analysis.gemini_agent import GeminiAIReportAgent
 from database.db_session import init_db, get_session
 from database.models import QbitaiArticle, CompanyArticle, AibaseArticle, BaaiHubArticle
 from sqlalchemy import select, func, desc
+from scheduler_manager import SchedulerManager
 
 # Page Config
 st.set_page_config(
@@ -23,6 +24,15 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize Scheduler
+@st.cache_resource
+def get_scheduler():
+    manager = SchedulerManager()
+    manager.start()
+    return manager
+
+scheduler_manager = get_scheduler()
 
 # Custom CSS for "Natural and Beautiful" look
 st.markdown("""
@@ -308,6 +318,20 @@ if st.sidebar.button("✨ 生成报告 (Generate Report)"):
     report = asyncio.run(generate_report_step_by_step(days_lookback, report_count, custom_instructions))
     if report:
         st.session_state.report_content = report
+
+st.sidebar.markdown("---")
+
+st.sidebar.subheader("3. 定时任务设置")
+with st.sidebar.expander("配置定时运行", expanded=False):
+    schedule_time = st.text_input("每天运行时间 (HH:MM)", value="09:00", help="例如: 09:00")
+    feishu_webhook = st.text_input("飞书 Webhook URL", type="password", help="用于接收报告推送")
+    
+    if st.button("保存定时设置"):
+        if not feishu_webhook:
+            st.error("请输入飞书 Webhook URL")
+        else:
+            scheduler_manager.update_schedule(schedule_time, feishu_webhook, days_lookback)
+            st.success(f"已设置定时任务: 每天 {schedule_time}")
 
 st.sidebar.markdown("---")
 st.sidebar.info("Designed for AIReport Project")
