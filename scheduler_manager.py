@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import json
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
@@ -14,17 +16,20 @@ logger = logging.getLogger(__name__)
 class SchedulerManager:
     def __init__(self):
         self.scheduler = BackgroundScheduler()
-        self.job_id = "daily_report_job"
-        self.feishu_webhook = None
+        self.config_file = "scheduler_config.json"
+        self.feishu_webhooks = []
+        self.schedule_times = []
         self.days_to_crawl = 1
         self.is_running = False
         self.current_status = "Idle"
         self.pipeline_steps = []  # 存储详细步骤供前端展示
+        self.load_config()
 
     def start(self):
         if not self.scheduler.running:
             self.scheduler.start()
             logger.info("Scheduler started")
+            self._apply_schedule()
 
     def _add_step(self, content, type="text", label=None):
         """添加进度步骤"""
@@ -35,15 +40,52 @@ class SchedulerManager:
             "timestamp": datetime.now().strftime("%H:%M:%S")
         })
 
+    def load_config(self):
+        """从文件加载配置"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+                    self.feishu_webhooks = config.get("feishu_webhooks", [])
+                    # Compatibility with old single webhook
+                    if not self.feishu_webhooks and config.get("feishu_webhook"):
+                        self.feishu_webhooks = [config.get("feishu_webhook")]
+                    
+                    self.schedule_times = config.get("schedule_times", [])
+                    # Compatibility with old single time
+                    if not self.schedule_times and config.get("schedule_time"):
+                        self.schedule_times = [config.get("schedule_time")]
+                        
+                    self.days_to_crawl = config.get("days_to_crawl", 1)
+                logger.info("Config loaded from file")
+            except Exception as e:
+                logger.error(f"Failed to load config: {e}")
+
+    def save_config(self):
+        """保存配置到文件"""
+        config = {
+            "feishu_webhooks": self.feishu_webhooks,
+            "schedule_times": self.schedule_times,
+            "days_to_crawl": self.days_to_crawl
+        }
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=4)
+            logger.info("Config saved to file")
+        except Exception as e:
+            logger.error(f"Failed to save config: {e}")
+
     def get_status(self):
-        job = self.scheduler.get_job(self.job_id)
-        next_run = job.next_run_time if job else None
+        jobs = self.scheduler.get_jobs()
+        next_run = min([job.next_run_time for job in jobs if job.next_run_time]) if jobs else None
+        
         return {
             "is_running": self.is_running,
             "current_status": self.current_status,
             "next_run_time": next_run,
-            "webhook_configured": bool(self.feishu_webhook),
-            "schedule_time": job.trigger.fields[3].name if job and hasattr(job.trigger, 'fields') else None,
+            "webhook_configured": len(self.feishu_webhooks) > 0,
+            "feishu_webhooks": self.feishu_webhooks,
+            "schedule_times": self.schedule_times,
             "pipeline_steps": self.pipeline_steps
         }
 
@@ -52,34 +94,41 @@ class SchedulerManager:
             self.scheduler.shutdown()
             logger.info("Scheduler stopped")
 
-    def update_schedule(self, time_str: str, webhook_url: str, days: int = 1):
+    def _apply_schedule(self):
+        """根据当前配置应用调度任务"""
+        # Remove all existing jobs
+        for job in self.scheduler.get_jobs():
+            self.scheduler.remove_job(job.id)
+            
+        for i, time_str in enumerate(self.schedule_times):
+            if not time_str:
+                continue
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                trigger = CronTrigger(hour=hour, minute=minute)
+                
+                self.scheduler.add_job(
+                    self.run_pipeline_sync,
+                    trigger=trigger,
+                    id=f"daily_report_job_{i}",
+                    replace_existing=True
+                )
+                logger.info(f"Scheduled job {i} set for {time_str}")
+            except ValueError:
+                logger.error(f"Invalid time format: {time_str}")
+
+    def update_schedule(self, times: list, webhook_urls: list, days: int = 1):
         """
-        Update the schedule time and webhook URL.
-        time_str: "HH:MM" format
+        Update the schedule times and webhook URLs.
+        times: List of "HH:MM" format strings
+        webhook_urls: List of webhook URLs
         """
-        self.feishu_webhook = webhook_url
+        self.feishu_webhooks = [w.strip() for w in webhook_urls if w.strip()]
+        self.schedule_times = [t.strip() for t in times if t.strip()]
         self.days_to_crawl = days
         
-        # Remove existing job if any
-        if self.scheduler.get_job(self.job_id):
-            self.scheduler.remove_job(self.job_id)
-            
-        if not time_str:
-            return
-
-        try:
-            hour, minute = map(int, time_str.split(':'))
-            trigger = CronTrigger(hour=hour, minute=minute)
-            
-            self.scheduler.add_job(
-                self.run_pipeline_sync,
-                trigger=trigger,
-                id=self.job_id,
-                replace_existing=True
-            )
-            logger.info(f"Scheduled job set for {time_str}")
-        except ValueError:
-            logger.error(f"Invalid time format: {time_str}")
+        self.save_config()
+        self._apply_schedule()
 
     def run_pipeline_sync(self):
         """Synchronous wrapper for the async pipeline"""
@@ -167,27 +216,34 @@ class SchedulerManager:
                 self._add_step(f"✅ 报告已保存至: {file_path}", type="success")
             
             # 4. Send to Feishu
-            if self.feishu_webhook and report_content:
+            if self.feishu_webhooks and report_content:
                 self.current_status = "Sending to Feishu..."
-                self._add_step("📤 正在发送至飞书...", type="text")
-                logger.info(f"Sending report to Feishu...")
-                sender = FeishuSender(self.feishu_webhook)
+                self._add_step(f"📤 正在发送至 {len(self.feishu_webhooks)} 个飞书群...", type="text")
+                logger.info(f"Sending report to {len(self.feishu_webhooks)} Feishu webhooks...")
                 
-                if "flow/api/trigger-webhook" in self.feishu_webhook:
-                    title_count = report_content.count("## ") 
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    report_type = "Daily Report" if self.days_to_crawl == 1 else f"{self.days_to_crawl}-Day Report"
-                    doc_title = f"AI News {report_type} - {datetime.now().strftime('%Y-%m-%d')}"
+                for webhook in self.feishu_webhooks:
+                    try:
+                        sender = FeishuSender(webhook)
+                        if "flow/api/trigger-webhook" in webhook:
+                            title_count = report_content.count("## ") 
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            report_type = "Daily Report" if self.days_to_crawl == 1 else f"{self.days_to_crawl}-Day Report"
+                            doc_title = f"AI News {report_type} - {datetime.now().strftime('%Y-%m-%d')}"
 
-                    await sender.send_to_flow(
-                        title=doc_title,
-                        total_titles=str(title_count),
-                        timestamp=timestamp,
-                        report_type=report_type,
-                        text=report_content
-                    )
-                else:
-                    await sender.send_markdown(f"AI 前沿动态速报 ({datetime.now().strftime('%Y-%m-%d')})", report_content)
+                            await sender.send_to_flow(
+                                title=doc_title,
+                                total_titles=str(title_count),
+                                timestamp=timestamp,
+                                report_type=report_type,
+                                text=report_content
+                            )
+                        else:
+                            await sender.send_markdown(f"AI 前沿动态速报 ({datetime.now().strftime('%Y-%m-%d')})", report_content)
+                        logger.info(f"Sent to webhook: {webhook[:20]}...")
+                    except Exception as send_error:
+                        logger.error(f"Failed to send to webhook {webhook[:20]}: {send_error}")
+                        self._add_step(f"⚠️ 发送至某个飞书群失败: {str(send_error)}", type="error")
+
                 self._add_step("✅ 飞书推送完成", type="success")
                 
             logger.info("Pipeline completed successfully")
@@ -198,19 +254,23 @@ class SchedulerManager:
             logger.error(f"Pipeline failed: {e}")
             self.current_status = f"Error: {str(e)}"
             self._add_step(f"❌ 任务失败: {str(e)}", type="error")
-            # Try to send error notification
-            if self.feishu_webhook:
-                sender = FeishuSender(self.feishu_webhook)
-                if "flow/api/trigger-webhook" in self.feishu_webhook:
-                     await sender.send_to_flow(
-                        title=f"AI News Error Report - {datetime.now().strftime('%Y-%m-%d')}",
-                        total_titles="0",
-                        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        report_type="Error Report",
-                        text=f"Pipeline failed: {str(e)}"
-                    )
-                else:
-                    await sender.send_markdown("AI News Report - Error", f"Pipeline failed: {str(e)}")
+            # Try to send error notification to all webhooks
+            if self.feishu_webhooks:
+                for webhook in self.feishu_webhooks:
+                    try:
+                        sender = FeishuSender(webhook)
+                        if "flow/api/trigger-webhook" in webhook:
+                             await sender.send_to_flow(
+                                title=f"AI News Error Report - {datetime.now().strftime('%Y-%m-%d')}",
+                                total_titles="0",
+                                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                report_type="Error Report",
+                                text=f"Pipeline failed: {str(e)}"
+                            )
+                        else:
+                            await sender.send_markdown("AI News Report - Error", f"Pipeline failed: {str(e)}")
+                    except:
+                        pass
         finally:
             self.is_running = False
             # Keep the steps for a while so the UI can show them

@@ -330,7 +330,8 @@ status = scheduler_manager.get_status()
 
 # Status Display
 if status["webhook_configured"]:
-    st.sidebar.success(f"✅ 定时任务已启用 (每天 {status['schedule_time']})")
+    times_str = ", ".join(status['schedule_times'])
+    st.sidebar.success(f"✅ 定时任务已启用 (每天 {times_str})")
     if status["next_run_time"]:
         next_run = status["next_run_time"].strftime("%Y-%m-%d %H:%M:%S")
         st.sidebar.caption(f"⏭️ 下次运行: {next_run}")
@@ -342,15 +343,26 @@ if status["is_running"]:
     st.sidebar.caption(f"当前状态: {status.get('current_status', '正在执行...')}")
 
 with st.sidebar.expander("修改配置", expanded=not status["webhook_configured"]):
-    schedule_time = st.text_input("每天运行时间 (HH:MM)", value=status['schedule_time'] if status['schedule_time'] else "09:00", help="例如: 09:00")
-    feishu_webhook = st.text_input("飞书 Webhook URL", value=scheduler_manager.feishu_webhook if scheduler_manager.feishu_webhook else "", type="password", help="用于接收报告推送")
+    st.markdown("🕒 **运行时间设置**")
+    times_df = pd.DataFrame({"时间 (HH:MM)": status['schedule_times'] if status['schedule_times'] else ["09:00"]})
+    edited_times = st.data_editor(times_df, num_rows="dynamic", width='stretch', key="times_editor")
+    
+    st.markdown("🔗 **飞书 Webhook 设置**")
+    webhooks_df = pd.DataFrame({"Webhook URL": status['feishu_webhooks'] if status['feishu_webhooks'] else [""]})
+    edited_webhooks = st.data_editor(webhooks_df, num_rows="dynamic", width='stretch', key="webhooks_editor")
     
     if st.button("保存定时设置"):
-        if not feishu_webhook:
-            st.error("请输入飞书 Webhook URL")
+        times_list = [t for t in edited_times["时间 (HH:MM)"].tolist() if t and t.strip()]
+        webhooks_list = [w for w in edited_webhooks["Webhook URL"].tolist() if w and w.strip()]
+        
+        if not webhooks_list:
+            st.error("请至少输入一个有效的飞书 Webhook URL")
+        elif not times_list:
+            st.error("请至少设置一个有效的运行时间")
         else:
-            scheduler_manager.update_schedule(schedule_time, feishu_webhook, days_lookback)
-            st.success(f"已设置定时任务: 每天 {schedule_time}")
+            scheduler_manager.update_schedule(times_list, webhooks_list, days_lookback)
+            st.success(f"已保存设置: {len(times_list)} 个时间点, {len(webhooks_list)} 个推送目标")
+            time.sleep(1)
             st.rerun()
 
 st.sidebar.markdown("---")

@@ -25,6 +25,7 @@ Thumbs.db
 
 # Logs
 *.log
+*.json
 
 # Database
 *.db
@@ -32,4 +33,5 @@ Thumbs.db
 
 # Reports (if you don't want to commit generated reports)
 final_reports/
+
 

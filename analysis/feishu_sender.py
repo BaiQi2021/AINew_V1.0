@@ -191,8 +191,14 @@ class FeishuSender:
         
         content = re.sub(r'^>\s*', '▎ ', content, flags=re.MULTILINE)
 
+        # Remove [阅读原文] lines with forbidden domains (safety net if LLM fails)
+        forbidden_patterns = [r'qq\.com', r'qbitai\.com', r'36kr\.com', r'mp\.weixin\.qq\.com', r'量子位']
+        for pattern in forbidden_patterns:
+            content = re.sub(rf'^\[阅读原文\]\(.*?{pattern}.*?\).*\n?', '', content, flags=re.MULTILINE | re.IGNORECASE)
+
         # Remove date after [阅读原文](URL)
-        content = re.sub(r'(\[阅读原文\]\(.*?\))\s*`\d{4}-\d{2}-\d{2}`', r'\1', content)
+        # Support both `YYYY-MM-DD` and `[YYYY-MM-DD]` formats
+        content = re.sub(r'(\[阅读原文\]\(.*?\))\s*`\[?\d{4}-\d{2}-\d{2}\]?`', r'\1', content)
 
         # Clean up excessive newlines (more than 2) to avoid huge gaps
         content = re.sub(r'\n{3,}', '\n\n', content)

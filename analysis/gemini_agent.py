@@ -1361,7 +1361,7 @@ all:"Large Language Model" AND all:Reasoning
    ```markdown
    ### **[事件标题 - 基于主标题优化（尽量不超过8个字）]**
    
-   [阅读原文]([primary_url])  [Publish_Time]
+   [阅读原文]([primary_url])  `[YYYY-MM-DD]`
    
    > **概要**：[综合多个来源，用3-4句话简练概括核心事件]
    
@@ -1397,7 +1397,7 @@ all:"Large Language Model" AND all:Reasoning
 
    **关于 [阅读原文] 的特别说明：**
    - 必须使用提供的 primary_url，这是优先级最高的官方核心信源
-   - **重要：** 如果 primary_url 包含 "qbitai.com"、"qq.com"、"量子位" 或 "36kr"，请**不要生成** [阅读原文] 这一行（包括日期），直接开始引用块 (> **概要**...)
+   - **重要：** 如果 primary_url 包含 "qbitai.com"、"qq.com"、"mp.weixin.qq.com"、"量子位" 或 "36kr"，请**不要生成** [阅读原文] 这一行（包括日期），直接开始引用块 (> **概要**...)
    - **重要：** 如果 primary_url 是论文链接（如包含 "arxiv.org", "openreview.net", "huggingface.co/papers"），请**不要生成** [阅读原文] 这一行（包括日期），确保该链接出现在 [相关论文] 中。
    - 禁止使用量子位、36kr等二手媒体链接
 
@@ -1535,7 +1535,7 @@ all:"Large Language Model" AND all:Reasoning
    ```markdown
    ### **[新闻标题]**
    
-   [阅读原文]([URL])  [Publish_Time]
+   [阅读原文]([URL])  `[YYYY-MM-DD]`
    
    > **概要**：[3-4句话简练概括核心事件]
    
@@ -1571,7 +1571,7 @@ all:"Large Language Model" AND all:Reasoning
 
    **关于 [阅读原文] 的特别说明：**
    - 必须使用提供的 url
-   - **重要：** 如果 url 包含 "qbitai.com"、"量子位" 或 "36kr"，请**不要生成** [阅读原文] 这一行（包括日期），直接开始引用块 (> **概要**...)
+   - **重要：** 如果 url 包含 "qbitai.com"、"qq.com"、"mp.weixin.qq.com"、"量子位" 或 "36kr"，请**不要生成** [阅读原文] 这一行（包括日期），直接开始引用块 (> **概要**...)
    - **重要：** 如果 url 是论文链接（如包含 "arxiv.org", "openreview.net", "huggingface.co/papers"），请**不要生成** [阅读原文] 这一行（包括日期），确保该链接出现在 [相关论文] 中。
 
    **关于 [相关论文] 的特别说明：**
@@ -1748,6 +1748,7 @@ all:"Large Language Model" AND all:Reasoning
 - 每条新闻用一行 Markdown 列表项表示。
 - 格式：- **[标签]** **新闻标题**: [1-2句话核心看点]
 - 标签示例：[大模型], [芯片], [应用]等
+- “本期速览”与第一条新闻间不要有多余文本。
 - 必须严格遵守上述格式，不要添加其他内容。
 
 新闻数据：
