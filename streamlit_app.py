@@ -258,7 +258,7 @@ async def generate_report_step_by_step(days, report_count, custom_instructions="
 st.sidebar.title("⚙️ 控制面板")
 
 st.sidebar.subheader("1. 数据采集设置")
-days_lookback = st.sidebar.slider("回溯天数 (Days)", 1, 30, 1)
+days_lookback = st.sidebar.slider("回溯天数 (Days)", 1, 30, 2)
 
 # Specific list of crawlers as requested
 target_crawlers = {
@@ -286,7 +286,7 @@ if st.sidebar.button("🚀 开始采集 (Start Crawling)"):
         st.sidebar.error("请至少选择一个爬虫！")
     else:
         with st.spinner(f"正在运行爬虫..."):
-            asyncio.run(run_crawler_task(selected_crawler_keys, days_lookback, 1))
+            asyncio.run(run_crawler_task(selected_crawler_keys, days_lookback, 2))
         st.sidebar.success("采集完成！")
 
 st.sidebar.markdown("---")

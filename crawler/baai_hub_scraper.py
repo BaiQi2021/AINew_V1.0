@@ -503,7 +503,8 @@ class BaaiHubScraper(BaseWebScraper):
         
         # Look for meta info in the page
         text = soup.get_text(" ", strip=True)
-        date_match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})', text)
+        # Match YYYY-MM-DD HH:MM or YYYY-MM-DD
+        date_match = re.search(r'(\d{4}[\-/]\d{2}[\-/]\d{2}(?:\s+\d{2}:\d{2})?)', text)
         if date_match:
             publish_date = date_match.group(1)
             
@@ -561,13 +562,18 @@ async def save_article_to_db(article: Dict):
                     # Format example: 2025-12-22 13:20
                     dt_str = filtered_article['publish_date']
                     if dt_str:
-                        # Remove " 分享" suffix if present
-                        if " 分享" in dt_str:
-                            dt_str = dt_str.replace(" 分享", "")
+                        # Ensure it's a string
+                        dt_str = str(dt_str)
+                        # Remove suffixes
+                        dt_str = dt_str.replace(" 分享", "").replace(" 发布", "").strip()
                         
                         dt = None
                         # Try multiple formats
-                        formats = ["%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M", "%Y/%m/%d"]
+                        formats = [
+                            "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+                            "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d",
+                            "%Y年%m月%d日 %H:%M:%S", "%Y年%m月%d日 %H:%M", "%Y年%m月%d日"
+                        ]
                         for fmt in formats:
                             try:
                                 dt = datetime.strptime(dt_str, fmt)
@@ -577,10 +583,23 @@ async def save_article_to_db(article: Dict):
                         
                         if dt:
                             filtered_article['publish_time'] = int(dt.timestamp())
+                            # Also update publish_date to standard YYYY-MM-DD
+                            filtered_article['publish_date'] = dt.strftime('%Y-%m-%d')
                         else:
-                            logger.warning(f"Could not parse date string: {dt_str}")
+                            # If parsing failed, still try to extract YYYY-MM-DD for the date column
+                            date_match = re.search(r'(\d{4}[\-/]\d{2}[\-/]\d{2})', dt_str)
+                            if date_match:
+                                filtered_article['publish_date'] = date_match.group(1).replace('/', '-')
+                            elif len(dt_str) >= 10:
+                                filtered_article['publish_date'] = dt_str[:10]
+                            
+                            logger.warning(f"Could not parse full date string for timestamp: {dt_str}")
                 except Exception as e:
                     logger.warning(f"Failed to parse date {filtered_article.get('publish_date')}: {e}")
+
+            # Final check: ensure publish_date is not longer than 10 chars
+            if 'publish_date' in filtered_article and filtered_article['publish_date']:
+                filtered_article['publish_date'] = str(filtered_article['publish_date'])[:10]
 
             db_article = BaaiHubArticle(**filtered_article)
             session.add(db_article)
@@ -641,35 +660,40 @@ async def run_crawler(days=3):
                     # Merge list info into detail
                     article['article_id'] = article_id
                     article['url'] = article_item['url']
-                    if not article.get('publish_date'):
-                        article['publish_date'] = article_item.get('publish_date')
+                    
+                    # Prefer list date as it's the date it appeared on BAAI Hub
+                    list_date = article_item.get('publish_date')
+                    if list_date:
+                        article['publish_date'] = list_date
+                    elif not article.get('publish_date'):
+                        article['publish_date'] = None
+                        
                     if not article.get('description'):
                         article['description'] = article_item.get('description')
 
                     article_date_str = article.get('publish_date')
                     
-                    # Clean publish_date for database (VARCHAR(10))
+                    # Clean publish_date
                     if article_date_str:
-                        # Remove suffixes
-                        clean_date = article_date_str.replace(" 分享", "").replace(" 发布", "").strip()
-                        # Truncate to 10 chars (YYYY-MM-DD)
-                        if len(clean_date) >= 10:
-                            article['publish_date'] = clean_date[:10]
+                        article['publish_date'] = str(article_date_str).replace(" 分享", "").replace(" 发布", "").strip()
                     
                     # Check date
                     is_old = False
                     if article_date_str:
                         try:
                             # Clean date string
-                            clean_date_str = article_date_str.replace(" 分享", "")
+                            clean_date_str = str(article_date_str).replace(" 分享", "").replace(" 发布", "").strip()
                             # Try to parse date
                             # It might be YYYY-MM-DD HH:MM or just YYYY-MM-DD
-                            if len(clean_date_str) >= 10:
-                                article_dt = datetime.strptime(clean_date_str[:10], "%Y-%m-%d")
+                            # Use regex to extract YYYY-MM-DD
+                            date_match = re.search(r'(\d{4}[\-/]\d{2}[\-/]\d{2})', clean_date_str)
+                            if date_match:
+                                date_part = date_match.group(1).replace('/', '-')
+                                article_dt = datetime.strptime(date_part, "%Y-%m-%d")
                                 if article_dt.date() < start_date.date():
                                     is_old = True
                         except Exception as e:
-                            logger.warning(f"Date parse error: {e}")
+                            logger.warning(f"Date parse error for {article_date_str}: {e}")
                     
                     if is_old:
                         logger.info(f"Article {article_id} date {article_date_str} is out of range.")
