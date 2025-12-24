@@ -98,11 +98,58 @@ class FeishuSender:
             # Avoid rate limits
             await asyncio.sleep(1)
 
+    def _limit_reference_links(self, content: str, limit: int = 5) -> str:
+        """Limit the number of links in each sub-category of '拓展阅读'."""
+        if "## 拓展阅读" not in content:
+            return content
+            
+        # Split content into main part and reference part
+        parts = re.split(r'(^##\s+拓展阅读.*$)', content, flags=re.MULTILINE)
+        if len(parts) < 3:
+            return content
+            
+        main_content = "".join(parts[:-2])
+        ref_header = parts[-2]
+        ref_body = parts[-1]
+        
+        # Split ref_body into sub-sections by ###
+        sub_parts = re.split(r'(^###\s+.+$)', ref_body, flags=re.MULTILINE)
+        
+        processed_ref_body = sub_parts[0] # Text before first ###
+        
+        for i in range(1, len(sub_parts), 2):
+            header = sub_parts[i]
+            body = sub_parts[i+1] if i+1 < len(sub_parts) else ""
+            
+            # Extract links (lines starting with *)
+            lines = body.split('\n')
+            links = []
+            non_links = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith('*'):
+                    links.append(line)
+                elif stripped:
+                    non_links.append(line)
+            
+            # Limit links
+            limited_links = links[:limit]
+            
+            processed_ref_body += header + "\n" + "\n".join(limited_links) + "\n"
+            if non_links:
+                processed_ref_body += "\n".join(non_links) + "\n"
+            processed_ref_body += "\n"
+            
+        return main_content + ref_header + processed_ref_body
+
     def _convert_markdown_to_feishu_format(self, content: str) -> str:
         """
         Convert standard Markdown headers to Feishu-compatible format.
         Feishu interactive cards don't support # headers.
         """
+        # Limit the number of links in each sub-category of '拓展阅读' to 5
+        content = self._limit_reference_links(content, limit=5)
+
         # Remove the first H1 header if it exists, as it's usually redundant with the card title
         # Also remove following newlines to avoid gap at the top
         content = re.sub(r'^#\s+(.+)(\n+)?', '', content, count=1, flags=re.MULTILINE)
@@ -128,13 +175,25 @@ class FeishuSender:
 
         content = re.sub(r'^##\s+(.+)$', replace_h2, content, flags=re.MULTILINE)
         
-        # Replace H3: ### Title -> \n🔹 **Title**
+        # Replace H3: ### Title -> \n❇️ **Title**
         # Add emoji and extra newlines for H3
-        content = re.sub(r'^###\s+(.+)$', lambda m: f"\n\n🔹 **{clean_bold(m.group(1))}**\n", content, flags=re.MULTILINE)
+        content = re.sub(r'^###\s+(.+)$', lambda m: f"\n\n❇️ **{clean_bold(m.group(1))}**\n", content, flags=re.MULTILINE)
         
         # Replace H4: #### Title -> **Title**
         content = re.sub(r'^####\s+(.+)$', lambda m: f"\n**{clean_bold(m.group(1))}**\n", content, flags=re.MULTILINE)
         
+        # Replace blockquotes (>) with a vertical bar character (▎) that renders more consistently in Feishu cards
+        # and ensure it has a blank line before it
+        content = re.sub(r'([^\n])\n>', r'\1\n\n>', content)
+        
+        # Ensure "概要" is bolded even if LLM forgot, and use Chinese colon
+        content = re.sub(r'^>\s*(?:\*\*)?概要(?:\*\*)?[:：]\s*', '> **概要**：', content, flags=re.MULTILINE)
+        
+        content = re.sub(r'^>\s*', '▎ ', content, flags=re.MULTILINE)
+
+        # Remove date after [阅读原文](URL)
+        content = re.sub(r'(\[阅读原文\]\(.*?\))\s*`\d{4}-\d{2}-\d{2}`', r'\1', content)
+
         # Clean up excessive newlines (more than 2) to avoid huge gaps
         content = re.sub(r'\n{3,}', '\n\n', content)
         
