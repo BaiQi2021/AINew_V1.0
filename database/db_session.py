@@ -13,6 +13,8 @@ def get_db_url():
         return f"mysql+asyncmy://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
     elif settings.DB_DIALECT == "postgresql":
         return f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+    elif settings.DB_DIALECT == "sqlite":
+        return f"sqlite+aiosqlite:///{settings.DB_NAME}.db"
     else:
         raise ValueError(f"Unsupported database dialect: {settings.DB_DIALECT}")
 
@@ -22,11 +24,16 @@ def get_server_url_without_db():
     elif settings.DB_DIALECT == "postgresql":
         # Connect to default 'postgres' db
         return f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/postgres"
+    elif settings.DB_DIALECT == "sqlite":
+        return f"sqlite+aiosqlite:///{settings.DB_NAME}.db"
     else:
         raise ValueError("Unsupported dialect")
 
 async def create_database_if_not_exists():
     """Creates the database if it doesn't exist."""
+    if settings.DB_DIALECT == "sqlite":
+        return # SQLite creates the file automatically
+    
     server_url = get_server_url_without_db()
     
     if settings.DB_DIALECT == "mysql":

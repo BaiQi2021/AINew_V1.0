@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     GEMINI_BASE_URL: Optional[str] = Field("https://generativelanguage.googleapis.com/v1beta/openai/", description="Gemini Base URL")
     GEMINI_MODEL_NAME: Optional[str] = Field("gemini-3-pro-preview", description="Gemini Model name")
 
+    # Feishu Configuration
+    FEISHU_WEBHOOK_URL: Optional[str] = Field(None, description="Single Feishu Webhook URL")
+    FEISHU_WEBHOOK_URLS: Optional[str] = Field(None, description="Multiple Feishu Webhook URLs, comma separated")
+
     class Config:
         env_file = str(ENV_FILE)
         env_prefix = ""

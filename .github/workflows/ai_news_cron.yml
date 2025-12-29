@@ -1,0 +1,49 @@
+name: AI News Daily Report
+
+on:
+  schedule:
+    # 每天早上 7 点运行 (UTC 23:00)
+    - cron: '0 23 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run AI News Pipeline
+      env:
+        REPORT_ENGINE_API_KEY: ${{ secrets.REPORT_ENGINE_API_KEY }}
+        REPORT_ENGINE_BASE_URL: ${{ secrets.REPORT_ENGINE_BASE_URL }}
+        REPORT_ENGINE_MODEL_NAME: ${{ secrets.REPORT_ENGINE_MODEL_NAME }}
+        FEISHU_WEBHOOK_URLS: ${{ secrets.FEISHU_WEBHOOK_URLS }}
+        DB_DIALECT: sqlite
+        DB_NAME: ai_report_gh
+        GITHUB_ACTIONS: "true"
+      run: python run_gh_actions.py
+
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/db_export.json final_reports/
+        git commit -m "Update AI News data and reports [skip ci]" || echo "No changes to commit"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
