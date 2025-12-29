@@ -49,14 +49,16 @@ async def export_to_json(file_path="data/db_export.json"):
 async def import_from_json(file_path="data/db_export.json"):
     """Import data from JSON file into the database."""
     import os
+    
+    # Always initialize DB first to ensure tables exist
+    await init_db()
+    
     if not os.path.exists(file_path):
         logger.warning(f"JSON file {file_path} not found, skipping import.")
         return
 
     with open(file_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-
-    await init_db()
 
     async with get_session() as session:
         for table_name, rows in data.items():
