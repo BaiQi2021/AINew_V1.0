@@ -36,6 +36,7 @@ jobs:
         DB_DIALECT: sqlite
         DB_NAME: ai_report_gh
         GITHUB_ACTIONS: "true"
+        TZ: Asia/Shanghai
       run: python run_gh_actions.py
 
     - name: Commit and push changes

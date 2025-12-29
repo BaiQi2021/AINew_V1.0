@@ -26,12 +26,13 @@ Thumbs.db
 # Logs
 *.log
 *.json
+!data/db_export.json
 
 # Database
 *.db
 *.sqlite
 
 # Reports (if you don't want to commit generated reports)
-final_reports/
+# final_reports/
 
 
