@@ -1140,14 +1140,8 @@ all:"Large Language Model" AND all:Reasoning
             if not re.search(r'\[阅读原文\]\(', content):
                 return False, "存在独立日期但缺少[阅读原文]链接，请删除日期或添加链接"
         
-        # 检查阅读原文链接是否使用了非官方源
-        read_original_match = re.search(r'\[阅读原文\]\((https?://[^\)]+)\)', content)
-        if read_original_match:
-            url = read_original_match.group(1).lower()
-            blocked_domains = ['qbitai.com', '36kr.com', 'qq.com', 'mp.weixin.qq.com', 'weixin.qq.com']
-            for domain in blocked_domains:
-                if domain in url:
-                    return False, f"阅读原文链接使用了非官方源({domain})，请使用官方源或省略该行"
+        # 阅读原文链接允许使用非官方信源（但优先级较低，官方信源优先）
+        # 不再强制检查和阻止非官方信源
         
         return True, ""
 
@@ -1181,15 +1175,16 @@ all:"Large Language Model" AND all:Reasoning
             if not refs:
                 return item.url
             
-            # 定义信源优先级
+            # 定义信源优先级（官方信源优先级最高，非官方信源也可使用但优先级较低）
             priority_order = [
-                ("official", 100),      # 官方发布
+                ("official", 100),      # 官方发布（最高优先级）
                 ("blog", 90),           # 官方博客
                 ("github", 85),         # GitHub Release
                 ("arxiv", 80),          # arXiv 论文
                 ("paper", 75),          # 论文
                 ("announcement", 70),   # 公告
                 ("external", 50),       # 外部链接
+                ("media", 40),          # 媒体报道（非官方）
                 ("social", 20),         # 社交媒体
             ]
             
@@ -1217,8 +1212,9 @@ all:"Large Language Model" AND all:Reasoning
             sorted_refs = sorted(refs, key=get_priority, reverse=True)
             best_ref = sorted_refs[0]
             
-            # 只有当最佳链接优先级高于默认时才使用
-            if get_priority(best_ref) >= 50:
+            # 返回优先级最高的链接（允许非官方信源，但官方信源优先）
+            # 优先级 >= 20 即可使用（包括非官方媒体和社交媒体）
+            if get_priority(best_ref) >= 20:
                 return best_ref.get("url", item.url)
                 
         except Exception as e:
@@ -1261,8 +1257,8 @@ all:"Large Language Model" AND all:Reasoning
    - 如果存在，必须是 `[阅读原文](URL)  `[YYYY-MM-DD]` ` 格式，URL必须是有效链接。
    - 如果不存在，则直接开始概要（> **概要**：...）。
    - **严禁**：不能只出现日期（如 `[2025-12-30]`）而没有 `[阅读原文](URL)`。
-   - **严禁**：URL不能是量子位、36kr、qq.com、mp.weixin.qq.com 等非官方源链接。
-   - **允许**：如果实在找不到官方源链接，可以省略整行（包括日期），直接开始概要。
+   - **允许**：可以使用任何有效的信源链接（包括量子位、36kr等媒体），但官方信源优先级更高。
+   - **允许**：如果没有任何可用链接，可以省略整行（包括日期），直接开始概要。
 3. **概要**：必须以 `> **概要**：` 开头。
 4. **内容详解**：必须包含 `**💡内容详解**` 标题。**注意：** `**💡内容详解**` 下方必须紧跟列表项（`- **...**`），绝对不能有任何正文段落。
 5. **关键点**：必须包含至少一个关键点大标题（`- **...**`）和解释。
@@ -1420,10 +1416,10 @@ all:"Large Language Model" AND all:Reasoning
    ```
 
    **关于 [阅读原文] 的特别说明：**
-   - 必须使用提供的 primary_url，这是优先级最高的官方核心信源
-   - **重要：** 如果 primary_url 包含 "qbitai.com"、"qq.com"、"mp.weixin.qq.com"、"量子位" 或 "36kr"，请**不要生成** [阅读原文] 这一行（包括日期），直接开始引用块 (> **概要**...)
+   - 必须使用提供的 primary_url（已按优先级排序：官方信源 > 技术媒体 > 普通媒体）
+   - **信源优先级说明：** 官方信源（openai.com, anthropic.com, deepmind.google 等）优先级最高，其次是技术平台（github, arxiv），最后是媒体报道
+   - **允许使用非官方信源：** 如果没有官方信源，可以使用量子位、36kr等媒体链接作为阅读原文
    - **重要：** 如果 primary_url 是论文链接（如包含 "arxiv.org", "openreview.net", "huggingface.co/papers"），请**不要生成** [阅读原文] 这一行（包括日期），确保该链接出现在 [相关论文] 中。
-   - 禁止使用量子位、36kr等二手媒体链接
 
    **关于 [相关论文] 的特别说明：**
    - 请在"候选 arXiv 论文库"中查找与当前事件**高度相关**的论文
@@ -1594,8 +1590,9 @@ all:"Large Language Model" AND all:Reasoning
    ```
 
    **关于 [阅读原文] 的特别说明：**
-   - 必须使用提供的 url
-   - **重要：** 如果 url 包含 "qbitai.com"、"qq.com"、"mp.weixin.qq.com"、"量子位" 或 "36kr"，请**不要生成** [阅读原文] 这一行（包括日期），直接开始引用块 (> **概要**...)
+   - 必须使用提供的 url（已按优先级排序：官方信源 > 技术媒体 > 普通媒体）
+   - **信源优先级说明：** 官方信源（openai.com, anthropic.com, deepmind.google 等）优先级最高，其次是技术平台（github, arxiv），最后是媒体报道
+   - **允许使用非官方信源：** 如果没有官方信源，可以使用量子位、36kr等媒体链接作为阅读原文
    - **重要：** 如果 url 是论文链接（如包含 "arxiv.org", "openreview.net", "huggingface.co/papers"），请**不要生成** [阅读原文] 这一行（包括日期），确保该链接出现在 [相关论文] 中。
 
    **关于 [相关论文] 的特别说明：**
