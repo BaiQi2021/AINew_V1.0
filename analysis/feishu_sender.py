@@ -175,9 +175,9 @@ class FeishuSender:
 
         content = re.sub(r'^##\s+(.+)$', replace_h2, content, flags=re.MULTILINE)
         
-        # Replace H3: ### Title -> \n❇️ **Title**
-        # Add emoji and extra newlines for H3
-        content = re.sub(r'^###\s+(.+)$', lambda m: f"\n\n❇️ **{clean_bold(m.group(1))}**\n", content, flags=re.MULTILINE)
+        # Replace H3: ### Title -> \n---\n❇️ **Title**
+        # Add separator, emoji and extra newlines for H3
+        content = re.sub(r'^###\s+(.+)$', lambda m: f"\n\n---\n\n❇️ **{clean_bold(m.group(1))}**\n", content, flags=re.MULTILINE)
         
         # Replace H4: #### Title -> **Title**
         content = re.sub(r'^####\s+(.+)$', lambda m: f"\n**{clean_bold(m.group(1))}**\n", content, flags=re.MULTILINE)
@@ -192,9 +192,9 @@ class FeishuSender:
         content = re.sub(r'^>\s*', '▎ ', content, flags=re.MULTILINE)
 
         # Remove [阅读原文] lines with forbidden domains (safety net if LLM fails)
-        forbidden_patterns = [r'qq\.com', r'qbitai\.com', r'36kr\.com', r'mp\.weixin\.qq\.com', r'量子位']
-        for pattern in forbidden_patterns:
-            content = re.sub(rf'^\[阅读原文\]\(.*?{pattern}.*?\).*\n?', '', content, flags=re.MULTILINE | re.IGNORECASE)
+        # forbidden_patterns = [r'qq\.com', r'qbitai\.com', r'36kr\.com', r'mp\.weixin\.qq\.com', r'量子位']
+        # for pattern in forbidden_patterns:
+        #    content = re.sub(rf'^\[阅读原文\]\(.*?{pattern}.*?\).*\n?', '', content, flags=re.MULTILINE | re.IGNORECASE)
 
         # Remove date after [阅读原文](URL)
         # Support both `YYYY-MM-DD` and `[YYYY-MM-DD]` formats
