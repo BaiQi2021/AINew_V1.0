@@ -1113,6 +1113,24 @@ all:"Large Language Model" AND all:Reasoning
         logger.info(f"共获取到 {len(all_papers)} 篇不重复的 arXiv 论文")
         return all_papers
     
+    def _fix_markdown_format(self, content: str) -> str:
+        """修复 Markdown 格式，强制解释内容换行"""
+        if not content:
+            return content
+            
+        # 匹配：(缩进) (-/*) (**标题**) ([:：]?) (内容)
+        # 宽容模式：允许冒号后无空格直接接内容，允许冒号前有空格
+        pattern = r'(?m)^(\s*)([-*]\s*\*\*.+?\*\*)(?:\s*[:：])?\s*([^\s].*)$'
+        
+        def replace_func(match):
+            indent = match.group(1)
+            bullet_part = match.group(2)
+            text = match.group(3)
+            # 另起一段并缩进，确保格式清晰
+            return f"{indent}{bullet_part}\n\n{indent}  {text}"
+            
+        return re.sub(pattern, replace_func, content)
+
     def _validate_news_item_format(self, content: str) -> Tuple[bool, str]:
         """验证新闻条目的 Markdown 格式"""
         required_patterns = [
@@ -1240,8 +1258,11 @@ all:"Large Language Model" AND all:Reasoning
 **💡内容详解**
 
 - **关键点大标题**
-    - **关键点解释**
-    ...
+    
+    关键点解释内容（可以换行，可以有缩进）...
+
+    - **子关键点标题** (如果有)
+        子关键点解释...
 
 [相关论文]([URL])
 ```
@@ -1254,16 +1275,18 @@ all:"Large Language Model" AND all:Reasoning
    - **允许**：可以使用任何有效的信源链接（包括量子位、36kr等媒体），但官方信源优先级更高。
    - **严禁**：不能省略此行。
 3. **概要**：必须以 `> **概要**：` 开头。
-4. **内容详解**：必须包含 `**💡内容详解**` 标题。**注意：** `**💡内容详解**` 下方必须紧跟列表项（`- **...**`），绝对不能有任何正文段落。
-5. **关键点**：必须包含至少一个关键点大标题（`- **...**`）和解释。
+4. **内容详解**：必须包含 `**💡内容详解**` 标题。下方应为列表结构（`- **...**`）。
+   - **允许格式**：`- **标题**` 后方可以直接跟解释，也可以换行跟解释。
+   - **允许空行**：列表项之间允许有空行，解释内容换行后允许有缩进。
+5. **关键点**：必须包含至少一个关键点大标题（`- **...**`）。
 6. **相关论文**：
    - 如果有论文链接，必须是 `[相关论文](URL)` 格式。
    - 如果没有论文链接，**绝对不能**出现 `[相关论文]` 字样或空行。
 7. **纯净度**：不应包含 "Here is the report" 或其他聊天内容。
 
 **输出要求：**
-- 如果格式完全正确，请只输出 "PASS"。
-- 如果有错误，请输出 "FAIL: [具体错误原因]"。
+- 如果格式基本符合（允许解释内容换行），请输出 "PASS"。
+- 如果有严重结构错误（如缺少“阅读原文”或“内容详解”），请输出 "FAIL: [具体错误原因]"。
 """
         try:
             response = self._call_llm(check_prompt, temperature=0.0)
@@ -1275,17 +1298,21 @@ all:"Large Language Model" AND all:Reasoning
             logger.error(f"格式检查 Agent 调用失败: {e}")
             return True, ""
 
-    async def _generate_event_entries_batch(self, batch_events: List[Dict], candidate_papers: List[Dict] = None, custom_instructions: str = "") -> List[Dict[str, str]]:
+    async def _generate_event_entries_batch(self, batch_events: List[Dict], candidate_papers: List[Dict] = None, custom_instructions: str = "", event_title_map: Dict[str, str] = None) -> List[Dict[str, str]]:
         """
         按事件生成报告条目（每个事件综合其下所有新闻）
         
         Args:
             batch_events: 事件列表，每个事件包含 {"event_id", "best_item", "all_items", "event_score"}
             candidate_papers: 候选 arXiv 论文列表
+            event_title_map: 事件ID到速览标题的映射字典
             
         Returns:
             生成的条目列表，每项包含 {"event_id", "category", "markdown_content"}
         """
+        if event_title_map is None:
+            event_title_map = {}
+            
         batch_data = []
         for event in batch_events:
             event_id = event["event_id"]
@@ -1322,9 +1349,13 @@ all:"Large Language Model" AND all:Reasoning
             
             pub_date = datetime.fromtimestamp(best_item.publish_time).strftime('%Y-%m-%d')
             
+            # 使用速览中的标题（如果有的话），否则使用原始标题
+            preferred_title = event_title_map.get(event_id, best_item.title)
+            
             batch_data.append({
                 "event_id": event_id,
-                "primary_title": best_item.title,  # 使用最高分新闻的标题作为主标题
+                "primary_title": best_item.title,  # 保留原始标题作为参考
+                "preferred_title": preferred_title,  # 速览中提取的标题
                 "primary_url": primary_url,  # 使用优先级最高的官方信源
                 "primary_source": best_item.source,
                 "publish_time": pub_date,
@@ -1373,7 +1404,7 @@ all:"Large Language Model" AND all:Reasoning
    
    **模板格式：**
    ```markdown
-   ### **事件标题（基于主标题优化，尽量不超过8个字，不要使用方括号[]）**
+   ### **事件标题（必须使用提供的preferred_title，不要修改，不要使用方括号[]）**
    
    [阅读原文]([primary_url])  `[YYYY-MM-DD]`
    
@@ -1381,31 +1412,12 @@ all:"Large Language Model" AND all:Reasoning
    
    **💡内容详解**
    
-    - **关键点大标题 1**
-    （需要详细对关键点进行解释，关键点解释的数量根据要点动态调整。注意：**💡内容详解** 下方必须直接开始列表项，不能有任何正文段落）
-    （**重要防幻觉提示**：如果大标题中包含数字，例如“五项创新”，请务必确保下方实际列出的子项数量与标题数字完全一致。如果内容不足，请修改标题去掉数字，例如改为“关键技术创新”。）
-        - **关键点解释1**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        - **关键点解释2**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        ……
-
-    - **关键点大标题 2**
-    （需要详细对关键点进行解释，关键点解释的数量根据要点动态调整）
-        - **关键点解释1**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        - **关键点解释2**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        ……
-
-    - **关键点大标题 3**
-    （需要详细对关键点进行解释，关键点解释的数量根据要点动态调整）
-        - **关键点解释1**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        - **关键点解释2**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）   
-        ……
-    ……
+    - **关键点大标题 X**（X表示可以有多个关键点大标题，数量根据内容复杂度自动决定）
+    （需要详细对关键点进行解释。注意：**💡内容详解** 下方必须直接开始列表项，不能有任何正文段落）
+    （**重要防幻觉提示**：**禁止标题与内容数量不符**。如果大标题写了"五项创新"，下方**必须**列出5个点。如果只有3个点，标题**必须**改为"三项创新"或"关键创新"。）
+    （**格式强制要求**：关键点解释的内容**必须写在同一行**，紧跟在标题冒号后面。例如：- **标题**：内容）
+    （**子标题使用规则**：如果该关键点只有1个要点，则直接在大标题后写解释；如果有2个或更多要点，则使用子标题列表格式）
+        - **关键点解释 Y**：在此处详细解释该技术，要有具体技术细节，不超过200字。
 
     [相关论文]([URL])
    ```
@@ -1448,6 +1460,11 @@ all:"Large Language Model" AND all:Reasoning
             response = self._call_llm(prompt, temperature=0.3)
             results = self._parse_json_response(response)
             if results:
+                # 0. 强制格式修复
+                for item in results:
+                    if "markdown_content" in item:
+                        item["markdown_content"] = self._fix_markdown_format(item["markdown_content"])
+
                 # 验证格式
                 valid_results = []
                 errors = []
@@ -1557,31 +1574,12 @@ all:"Large Language Model" AND all:Reasoning
    
    **💡内容详解**
    
-    - **关键点大标题 1**
-    （需要详细对关键点进行解释，关键点解释的数量根据要点动态调整。注意：**💡内容详解** 下方必须直接开始列表项，不能有任何正文段落）
-    （**重要防幻觉提示**：如果大标题中包含数字，例如“五项创新”，请务必确保下方实际列出的子项数量与标题数字完全一致。如果内容不足，请修改标题去掉数字，例如改为“关键技术创新”。）
-        - **关键点解释1**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        - **关键点解释2**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        ……
-
-    - **关键点大标题 2**
-    （需要详细对关键点进行解释，关键点解释的数量根据要点动态调整）
-        - **关键点解释1**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        - **关键点解释2**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        ……
-
-    - **关键点大标题 3**
-    （需要详细对关键点进行解释，关键点解释的数量根据要点动态调整）
-        - **关键点解释1**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）
-        - **关键点解释2**
-        （另起一段详细解释该技术，要有具体技术细节，不超过200字）   
-        ……
-    ……
+    - **关键点大标题 X**（X表示可以有多个关键点大标题，数量根据内容复杂度自动决定）
+    （需要详细对关键点进行解释。注意：**💡内容详解** 下方必须直接开始列表项，不能有任何正文段落）
+    （**重要防幻觉提示**：**禁止标题与内容数量不符**。如果大标题写了"五项创新"，下方**必须**列出5个点。如果只有3个点，标题**必须**改为"三项创新"或"关键创新"。）
+    （**格式强制要求**：关键点解释的内容**必须写在同一行**，紧跟在标题冒号后面。例如：- **标题**：内容）
+    （**子标题使用规则**：如果该关键点只有1个要点，则直接在大标题后写解释；如果有2个或更多要点，则使用子标题列表格式）
+        - **关键点解释 Y**：在此处详细解释该技术，要有具体技术细节，不超过200字。
 
     [相关论文]([URL])
    ```
@@ -1625,6 +1623,11 @@ all:"Large Language Model" AND all:Reasoning
             response = self._call_llm(prompt, temperature=0.3)
             results = self._parse_json_response(response)
             if results:
+                # 0. 强制格式修复
+                for item in results:
+                    if "markdown_content" in item:
+                        item["markdown_content"] = self._fix_markdown_format(item["markdown_content"])
+
                 # 验证格式
                 valid_results = []
                 errors = []
@@ -1708,7 +1711,68 @@ all:"Large Language Model" AND all:Reasoning
         for i, e in enumerate(top_events, 1):
             logger.info(f"  [{i}] {e['event_id']}: 分数={e['event_score']:.2f}, 包含 {len(e['all_items'])} 条新闻, 代表: {e['best_item'].title[:40]}...")
 
-        # 2. 分批生成内容 (按事件生成，每个事件综合其下所有新闻)
+        # 2. 先生成"本期速览"以确定标题
+        # 用于速览生成的代表新闻列表
+        valid_items = [e["best_item"] for e in top_events]
+        overview_prompt = f"""请为以下新闻生成"本期速览"列表。
+
+**严格要求：**
+- **必须使用中文输出**，所有内容包括标签、标题和核心看点都必须是中文。
+- 每条新闻用一行 Markdown 列表项表示。
+- 格式：- **[标签]** **新闻标题**: [1-2句话核心看点]
+- **新闻标题要求**：尽量精炼简短，控制在10-20字以内，去除冗余修饰词，保留核心信息。
+- 标签示例：[大模型], [芯片], [应用], [AI医疗], [开发工具], [前沿研究]等
+- **禁止在列表前添加任何标题文字**（如"本期速览"、"##"等），直接输出列表项。
+- 必须严格遵守上述格式，不要添加其他内容。
+
+新闻数据：
+{json.dumps([{"title": item.title, "description": item.description, "event_id": top_events[idx]["event_id"]} for idx, item in enumerate(valid_items)], ensure_ascii=False, indent=2)}
+
+请直接返回 Markdown 列表，以 "- **[" 开头。
+"""
+        overview_content = self._call_llm(overview_prompt) or "生成失败"
+        
+        # 清理可能出现的重复"本期速览"文本
+        overview_content = re.sub(r'^(本期速览|##\s*⚡?\s*本期速览|⚡\s*本期速览)[\s\n]*', '', overview_content.strip())
+        # 确保以列表项开头
+        lines = overview_content.strip().split('\n')
+        clean_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # 跳过空行和非列表项的行（如重复的标题）
+            if stripped and (stripped.startswith('-') or stripped.startswith('*')):
+                clean_lines.append(line)
+            elif stripped and '**[' in stripped and not stripped.startswith(('-', '*')):
+                # 可能缺少列表标记，补上
+                clean_lines.append('- ' + stripped)
+        overview_content = '\n'.join(clean_lines) if clean_lines else overview_content
+        
+        # 简单验证概览格式
+        if "**[" not in overview_content:
+             logger.warning("概览格式可能不符合要求，尝试修复...")
+             # 简单的重试逻辑
+             overview_prompt += "\n\n**修正要求**: 上次生成格式不正确。请确保每行以 '- **[标签]**' 开头，不要使用斜体，不要添加任何标题文字。"
+             retry_content = self._call_llm(overview_prompt)
+             if retry_content and "**[" in retry_content:
+                 # 同样清理重试结果
+                 retry_content = re.sub(r'^(本期速览|##\s*⚡?\s*本期速览|⚡\s*本期速览)[\s\n]*', '', retry_content.strip())
+                 overview_content = retry_content
+
+        # 3. 从速览中提取标题，建立event_id到标题的映射
+        event_title_map = {}
+        # 匹配格式: - **[标签]** **标题**: 描述
+        overview_title_pattern = re.compile(r'-\s+\*\*\[.+?\]\*\*\s+\*\*(.+?)\*\*[:：]')
+        overview_lines = overview_content.strip().split('\n')
+        for idx, line in enumerate(overview_lines):
+            if idx < len(top_events):
+                match = overview_title_pattern.search(line)
+                if match:
+                    extracted_title = match.group(1).strip()
+                    event_id = top_events[idx]["event_id"]
+                    event_title_map[event_id] = extracted_title
+                    logger.info(f"为事件 {event_id} 提取速览标题: {extracted_title}")
+
+        # 4. 分批生成详细报告内容 (按事件生成，每个事件综合其下所有新闻)
         batch_size = 3  # 每批处理3个事件
         generated_entries = []
         
@@ -1716,17 +1780,19 @@ all:"Large Language Model" AND all:Reasoning
             batch_events = top_events[i:i + batch_size]
             logger.info(f"正在生成报告详情：批次 {i // batch_size + 1} (共 {len(batch_events)} 个事件)")
             
-            # 按事件生成内容，每个事件使用其下所有新闻
-            entries = await self._generate_event_entries_batch(batch_events, candidate_papers=arxiv_papers, custom_instructions=custom_instructions)
+            # 按事件生成内容，每个事件使用其下所有新闻，并传入标题映射
+            entries = await self._generate_event_entries_batch(
+                batch_events, 
+                candidate_papers=arxiv_papers, 
+                custom_instructions=custom_instructions,
+                event_title_map=event_title_map
+            )
             if entries:
                 generated_entries.extend(entries)
             else:
                 logger.error(f"批次 {i // batch_size + 1} 生成失败")
-        
-        # 用于后续速览生成的代表新闻列表
-        valid_items = [e["best_item"] for e in top_events]
 
-        # 3. 组织内容 并 提取已使用的链接
+        # 5. 组织内容 并 提取已使用的链接
         # 建立 article_id 到 news_item 的映射，方便获取额外信息
         item_map = {item.article_id: item for item in valid_items}
         
@@ -1760,53 +1826,7 @@ all:"Large Language Model" AND all:Reasoning
                 elif "arxiv.org/pdf/" in clean_link:
                     used_urls.add(clean_link.replace("/pdf/", "/abs/"))
 
-        # 4. 生成"本期速览" (使用与详细报告相同的 valid_items)
-        top_items = valid_items  # 速览和详细报告使用相同的新闻列表
-        overview_prompt = f"""请为以下新闻生成"本期速览"列表。
-
-**严格要求：**
-- **必须使用中文输出**，所有内容包括标签、标题和核心看点都必须是中文。
-- 每条新闻用一行 Markdown 列表项表示。
-- 格式：- **[标签]** **新闻标题**: [1-2句话核心看点]
-- **新闻标题要求**：尽量精炼简短，控制在10-20字以内，去除冗余修饰词，保留核心信息。
-- 标签示例：[大模型], [芯片], [应用], [AI医疗], [开发工具], [前沿研究]等
-- **禁止在列表前添加任何标题文字**（如"本期速览"、"##"等），直接输出列表项。
-- 必须严格遵守上述格式，不要添加其他内容。
-
-新闻数据：
-{json.dumps([{"title": item.title, "description": item.description} for item in top_items], ensure_ascii=False, indent=2)}
-
-请直接返回 Markdown 列表，以 "- **[" 开头。
-"""
-        overview_content = self._call_llm(overview_prompt) or "生成失败"
-        
-        # 清理可能出现的重复"本期速览"文本
-        overview_content = re.sub(r'^(本期速览|##\s*⚡?\s*本期速览|⚡\s*本期速览)[\s\n]*', '', overview_content.strip())
-        # 确保以列表项开头
-        lines = overview_content.strip().split('\n')
-        clean_lines = []
-        for line in lines:
-            stripped = line.strip()
-            # 跳过空行和非列表项的行（如重复的标题）
-            if stripped and (stripped.startswith('-') or stripped.startswith('*')):
-                clean_lines.append(line)
-            elif stripped and '**[' in stripped and not stripped.startswith(('-', '*')):
-                # 可能缺少列表标记，补上
-                clean_lines.append('- ' + stripped)
-        overview_content = '\n'.join(clean_lines) if clean_lines else overview_content
-        
-        # 简单验证概览格式
-        if "**[" not in overview_content:
-             logger.warning("概览格式可能不符合要求，尝试修复...")
-             # 简单的重试逻辑
-             overview_prompt += "\n\n**修正要求**: 上次生成格式不正确。请确保每行以 '- **[标签]**' 开头，不要使用斜体，不要添加任何标题文字。"
-             retry_content = self._call_llm(overview_prompt)
-             if retry_content and "**[" in retry_content:
-                 # 同样清理重试结果
-                 retry_content = re.sub(r'^(本期速览|##\s*⚡?\s*本期速览|⚡\s*本期速览)[\s\n]*', '', retry_content.strip())
-                 overview_content = retry_content
-
-        # 5. 解析“本期速览”标签，构建 标题->标签 映射，便于拓展阅读分组
+        # 6. 解析"本期速览"标签，构建 标题->标签 映射，便于拓展阅读分组
         title_tag_map = {}
         # 兼容可能出现的斜体加粗情况，但优先匹配标准格式
         tag_line_pattern = re.compile(r"\*\s+(?:_|\*)?\*\*\[(?P<tag>.+?)\]\*\*\s+\*\*(?P<title>.+?)\*\*[:：]")
@@ -1836,7 +1856,7 @@ all:"Large Language Model" AND all:Reasoning
                         id_category_map[item.article_id] = cn_cat
                     break
 
-        # 6. 生成“拓展阅读” (Reference Links)
+        # 7. 生成"拓展阅读" (Reference Links)
         # 这里收集所有新闻（包括 C 级）的参考链接，以及 arXiv 论文
         reference_section = ""
         # 候选链接列表，结构: {'markdown': str, 'type': 'arxiv'|'other', 'tag': str}
@@ -1953,7 +1973,7 @@ all:"Large Language Model" AND all:Reasoning
             
         reference_section = "\n\n".join(sections)
 
-        # 6. 最终组装
+        # 8. 最终组装
         # 使用 days 参数计算日期范围，而不是根据新闻发布时间
         today = datetime.now()
         date_range_end = today.strftime('%Y-%m-%d')
